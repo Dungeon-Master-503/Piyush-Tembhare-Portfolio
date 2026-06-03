@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sparkles, Trash2, LogOut, ArrowUp, Menu, X, ArrowUpRight, Lock } from "lucide-react";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
 
 import CustomCursor from "./components/CustomCursor";
 import AdminModal from "./components/AdminModal";
@@ -17,6 +18,7 @@ import ContactSection from "./components/ContactSection";
 
 import { PortfolioData, Project } from "./types";
 import { initialPortfolioData } from "./data";
+import { db, handleFirestoreError, OperationType } from "./firebase";
 
 // Resolve generated master assets using static Vite asset resolution
 const mountainMistImg = new URL("./assets/images/mountain_mist_1780325086245.png", import.meta.url).href;
@@ -25,33 +27,8 @@ const portraitBwImg = new URL("./assets/images/piyush_portrait_bw_1780407660201.
 const portraitRedImg = new URL("./assets/images/piyush_portrait_red_1780407681641.png", import.meta.url).href;
 
 export default function App() {
-  // --- STATE PERSISTENCE CLIENT SIDE ---
-  const [portfolio, setPortfolio] = useState<PortfolioData>(() => {
-    const saved = localStorage.getItem("piyush_portfolio_data_v2");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Ensure any preloaded mock show projects are automatically and cleanly removed from client browser storage
-        if (parsed.projects && Array.isArray(parsed.projects)) {
-          parsed.projects = parsed.projects.filter((p: any) => 
-            p.id !== "proj-1" && 
-            p.id !== "proj-2" && 
-            p.id !== "proj-3" &&
-            p.name !== "Alpine Design Agency" &&
-            p.name !== "Zenith Python AI Playpen" &&
-            p.name !== "Sabi Artisan Marketplace"
-          );
-        }
-        return {
-          ...initialPortfolioData,
-          ...parsed
-        };
-      } catch (err) {
-        // Fallback on corrupt parsing
-      }
-    }
-    return initialPortfolioData;
-  });
+  const [portfolio, setPortfolio] = useState<PortfolioData>(initialPortfolioData);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
     return sessionStorage.getItem("piyush_admin_auth") === "authenticated";
@@ -60,10 +37,81 @@ export default function App() {
   const [scrollHeight, setScrollHeight] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
-  // Synchronize state down to localStorage
+  // Real-time Firestore document snapshot subscription
   useEffect(() => {
-    localStorage.setItem("piyush_portfolio_data_v2", JSON.stringify(portfolio));
-  }, [portfolio]);
+    const docRef = doc(db, "portfolio", "data");
+    const unsubscribe = onSnapshot(
+      docRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data() as PortfolioData;
+
+          // Clean out any preloaded legacy mock design items
+          const originalLength = data.projects?.length || 0;
+          if (data.projects && Array.isArray(data.projects)) {
+            data.projects = data.projects.filter((p: any) =>
+              p.id !== "proj-1" &&
+              p.id !== "proj-2" &&
+              p.id !== "proj-3" &&
+              p.id !== "proj-swiss-modern" &&
+              p.id !== "proj-sovereign-ai" &&
+              p.id !== "proj-sabi-hearth" &&
+              p.name !== "Alpine Design Agency" &&
+              p.name !== "Zenith Python AI Playpen" &&
+              p.name !== "Sabi Artisan Marketplace" &&
+              p.name !== "Aetheris — Swiss Modern Architecture Lab" &&
+              p.name !== "Sovereign AI — LLM Playpen & Pipeline Planner" &&
+              p.name !== "Sabi Hearth — Japanese Ceramic Gallery"
+            );
+          }
+
+          // Safe repopulate if list gets completely cleared out
+          let needsSyncBack = originalLength !== (data.projects?.length || 0);
+          if (!data.projects || data.projects.length === 0) {
+            data.projects = initialPortfolioData.projects;
+            if (data.stats) {
+              data.stats.projectsDone = initialPortfolioData.projects.length;
+            }
+            needsSyncBack = true;
+          }
+
+          const mergedPortfolio = {
+            ...initialPortfolioData,
+            ...data,
+          };
+
+          setPortfolio(mergedPortfolio);
+
+          // If we had legacy files cleaned, save the clean version permanently back to Firestore.
+          if (needsSyncBack) {
+            setDoc(docRef, mergedPortfolio)
+              .then(() => {
+                console.log("Cloud Firestore synchronized with clean updated portfolio projects.");
+              })
+              .catch((err) => {
+                console.error("Error back-syncing cleaned portfolio projects:", err);
+              });
+          }
+        } else {
+          // Document does not exist in Cloud database yet; seed it once automatically!
+          setDoc(docRef, initialPortfolioData)
+            .then(() => {
+              console.log("Cloud Firestore bootstrapped with initial portfolio profile.");
+            })
+            .catch((err) => {
+              handleFirestoreError(err, OperationType.WRITE, "portfolio/data");
+            });
+        }
+        setIsLoading(false);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, "portfolio/data");
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
 
   // Set the dynamic luxury SEO page title
   useEffect(() => {
@@ -124,78 +172,96 @@ export default function App() {
     sessionStorage.removeItem("piyush_admin_auth");
   };
 
-  const handleUpdateUserName = (newName: string) => {
-    setPortfolio((prev) => ({
-      ...prev,
+  const syncToFirestore = async (updatedData: PortfolioData) => {
+    try {
+      await setDoc(doc(db, "portfolio", "data"), updatedData);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, "portfolio/data");
+    }
+  };
+
+  const handleUpdateUserName = async (newName: string) => {
+    const updated = {
+      ...portfolio,
       userName: newName,
-    }));
+    };
+    setPortfolio(updated);
+    await syncToFirestore(updated);
   };
 
-  const handleUpdateAboutText = (newText: string) => {
-    setPortfolio((prev) => ({
-      ...prev,
+  const handleUpdateAboutText = async (newText: string) => {
+    const updated = {
+      ...portfolio,
       aboutText: newText,
-    }));
+    };
+    setPortfolio(updated);
+    await syncToFirestore(updated);
   };
 
-  const handleUpdatePortrait = (newUrl: string) => {
-    setPortfolio((prev) => ({
-      ...prev,
+  const handleUpdatePortrait = async (newUrl: string) => {
+    const updated = {
+      ...portfolio,
       portraitImageUrl: newUrl,
-    }));
+    };
+    setPortfolio(updated);
+    await syncToFirestore(updated);
   };
 
-  const handleAddSkill = (newSkill: string) => {
-    setPortfolio((prev) => {
-      if (prev.skills.includes(newSkill)) return prev;
-      return {
-        ...prev,
-        skills: [...prev.skills, newSkill],
-        stats: {
-          ...prev.stats,
-          skillsCount: prev.skills.length + 1,
-        },
-      };
-    });
-  };
-
-  const handleRemoveSkill = (skillToRemove: string) => {
-    setPortfolio((prev) => {
-      const filtered = prev.skills.filter((s) => s !== skillToRemove);
-      return {
-        ...prev,
-        skills: filtered,
-        stats: {
-          ...prev.stats,
-          skillsCount: Math.max(0, filtered.length),
-        },
-      };
-    });
-  };
-
-  const handleAddProject = (newProject: Project) => {
-    setPortfolio((prev) => ({
-      ...prev,
-      projects: [newProject, ...prev.projects],
+  const handleAddSkill = async (newSkill: string) => {
+    if (portfolio.skills.includes(newSkill)) return;
+    const updatedSkills = [...portfolio.skills, newSkill];
+    const updated = {
+      ...portfolio,
+      skills: updatedSkills,
       stats: {
-        ...prev.stats,
-        projectsDone: prev.projects.length + 1,
+        ...portfolio.stats,
+        skillsCount: updatedSkills.length,
       },
-    }));
+    };
+    setPortfolio(updated);
+    await syncToFirestore(updated);
   };
 
-  const handleDeleteProject = (projectId: string) => {
-    setPortfolio((prev) => {
-      const filtered = prev.projects.filter((p) => p.id !== projectId);
-      return {
-        ...prev,
-        projects: filtered,
-        stats: {
-          ...prev.stats,
-          projectsDone: Math.max(0, filtered.length),
-        },
-      };
-    });
+  const handleRemoveSkill = async (skillToRemove: string) => {
+    const filtered = portfolio.skills.filter((s) => s !== skillToRemove);
+    const updated = {
+      ...portfolio,
+      skills: filtered,
+      stats: {
+        ...portfolio.stats,
+        skillsCount: Math.max(0, filtered.length),
+      },
+    };
+    setPortfolio(updated);
+    await syncToFirestore(updated);
+  };
+
+  const handleAddProject = async (newProject: Project) => {
+    const updatedProjects = [newProject, ...portfolio.projects];
+    const updated = {
+      ...portfolio,
+      projects: updatedProjects,
+      stats: {
+        ...portfolio.stats,
+        projectsDone: updatedProjects.length,
+      },
+    };
+    setPortfolio(updated);
+    await syncToFirestore(updated);
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    const filtered = portfolio.projects.filter((p) => p.id !== projectId);
+    const updated = {
+      ...portfolio,
+      projects: filtered,
+      stats: {
+        ...portfolio.stats,
+        projectsDone: Math.max(0, filtered.length),
+      },
+    };
+    setPortfolio(updated);
+    await syncToFirestore(updated);
   };
 
   const scrollToSection = (id: string) => {
@@ -204,6 +270,23 @@ export default function App() {
       el.scrollIntoView({ behavior: "smooth" });
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#FAFAF8] flex flex-col items-center justify-center relative select-none">
+        <div className="grain-overlay" />
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="h-10 w-10 flex items-center justify-center rounded-full border-2 border-luxury-sage/20 border-t-luxury-sage animate-spin" />
+          <div className="space-y-1">
+            <h1 className="font-serif text-lg tracking-wider text-luxury-charcoal">Studio Gateway Connected</h1>
+            <p className="font-mono text-[9px] uppercase tracking-widest text-[#B5A585] font-bold">
+              Synchronizing Portrait Database...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen bg-luxury-white text-luxury-charcoal flex flex-col selection:bg-luxury-sage/40">
@@ -280,7 +363,7 @@ export default function App() {
         onUpdatePortrait={handleUpdatePortrait}
         isAdmin={isAdmin}
         stats={portfolio.stats}
-        portraitImageUrl={portfolio.portraitImageUrl || portraitBwImg}
+        portraitImageUrl={portfolio.portraitImageUrl || profilePortraitImg}
         portraitBwImg={portraitBwImg}
         portraitRedImg={portraitRedImg}
         originalPortraitImg={profilePortraitImg}

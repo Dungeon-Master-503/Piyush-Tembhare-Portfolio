@@ -18,9 +18,24 @@ export const initialPortfolioData: PortfolioData = {
     "Always Learning ✦"
   ],
   stats: {
-    projectsDone: 0,
+    projectsDone: 2,
     skillsCount: 7,
     yearsLearning: 3
   },
-  projects: []
+  projects: [
+    {
+      id: "the-kitchen-ai-studio",
+      name: "The Kitchen by AI Studio",
+      description: "Designed and developed a modern, responsive website for a local café to establish its online presence and showcase its menu, services, and contact information. Focused on clean UI/UX, mobile responsiveness, and fast loading performance to improve customer engagement and accessibility.",
+      url: "https://the-kitchen-by-ai-stud-piyush.vercel.app/",
+      tags: ["React", "Vite", "Tailwind CSS", "UI/UX Design", "Responsive Layout", "Interactive Menu"]
+    },
+    {
+      id: "cafe-eden-tumsar",
+      name: "Cafe Eden Tumsar",
+      description: "Designed and built a premium café website focused on enhancing customer engagement and brand identity. The website provides an immersive browsing experience with elegant visuals, detailed product showcases, and streamlined navigation to help visitors explore the café's offerings effortlessly.",
+      url: "https://cafe-eden-tumsar.vercel.app/",
+      tags: ["React", "TypeScript", "Aesthetic UI", "Brand Identity", "Interactive Gallery", "Mobile-First"]
+    }
+  ]
 };

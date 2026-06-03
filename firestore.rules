@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Catch-all safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Secure helper validators
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    
+    function incoming() { 
+      return request.resource.data; 
+    }
+    
+    function existing() { 
+      return resource.data; 
+    }
+
+    function isValidPortfolio(data) {
+      return data.userName is string && data.userName.size() <= 200
+          && data.aboutText is string && data.aboutText.size() <= 2000
+          && data.skills is list && data.skills.size() <= 100
+          && data.projects is list && data.projects.size() <= 100
+          && data.stats is map
+          && data.stats.projectsDone is int
+          && data.stats.skillsCount is int
+          && data.stats.yearsLearning is int;
+    }
+
+    // Match the global portfolio data document
+    match /portfolio/{documentId} {
+      allow get: if isValidId(documentId);
+      allow list: if false;
+      allow create: if isValidId(documentId) && isValidPortfolio(incoming());
+      allow update: if isValidId(documentId) && isValidPortfolio(incoming());
+      allow delete: if false;
+    }
+  }
+}

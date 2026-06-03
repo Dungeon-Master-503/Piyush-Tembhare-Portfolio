@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "A showcase project in Piyush's portfolio",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "url": { "type": "string" },
+        "tags": { "type": "array" }
+      },
+      "required": ["id", "name", "description", "url"]
+    },
+    "Portfolio": {
+      "title": "Portfolio",
+      "description": "Overall portfolio configuration, assets, biography, skills, and stats",
+      "type": "object",
+      "properties": {
+        "userName": { "type": "string" },
+        "aboutText": { "type": "string" },
+        "skills": { "type": "array" },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "projectsDone": { "type": "number" },
+            "skillsCount": { "type": "number" },
+            "yearsLearning": { "type": "number" }
+          }
+        },
+        "portraitImageUrl": { "type": "string" },
+        "projects": { "type": "array" }
+      },
+      "required": ["userName", "aboutText", "skills", "projects", "stats"]
+    }
+  },
+  "firestore": {
+    "/portfolio/data": {
+      "schema": "Portfolio",
+      "description": "Global portfolio statistics, skills, biography, and project list"
+    }
+  }
+}
